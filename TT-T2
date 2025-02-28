@@ -1,0 +1,161 @@
+#include <HX711.h>
+#include <RtcDS1302.h>
+#include <ThreeWire.h>
+#include <Arduino.h>
+#include <Servo.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+#define CALIBRATION_FACTOR -50000 // Adjust this value
+
+// Pin assignments
+const int LOADCELL_DOUT_PIN = A1; // HX711 Data output pin
+const int LOADCELL_SCK_PIN = A2;  // HX711 Clock pin
+
+const int WATER_PUMP = 3;	    // Temporary LED
+const int LEVER_SWITCH_PIN = 4;  // Lever switch pin
+const int TRIG_PIN = 5;          // Ultrasonic sensor trigger pin
+const int ECHO_PIN = 6;          // Ultrasonic sensor echo pin
+const int SERVO_PIN = 9;         // Servo motor control pin
+const int CE_PIN = 10;
+const int IO_PIN = 11;
+const int SCLK_PIN = 12;
+
+// Object declarations
+HX711 scale;
+ThreeWire myWire(IO_PIN, SCLK_PIN, CE_PIN);
+RtcDS1302<ThreeWire> rtc(myWire);
+Servo motor;
+LiquidCrystal_I2C lcd(0x27, 16, 2); // LCD 16x2 with I2C address 0x27
+
+// Global variables
+int distance;
+long duration;
+int pressSwitch = 0;
+int chosenTime = 0;
+int GlobTime = 0;
+int weightThreshold = 100;    // Weight threshold
+int distanceThreshold = 100;  // Distance threshold
+
+void setup() {
+  Serial.begin(9600);
+  // Initialize RTC
+  set_time();
+  GlobTime = 0;
+
+  // Pin configurations
+  pinmode(WATER_PUMP, INPUT); //Temporary
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(LEVER_SWITCH_PIN, INPUT);
+ 
+  scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
+  motor.attach(SERVO_PIN);
+
+  // Initialize LCD
+  lcd.init();           // Initialize the LCD
+  lcd.backlight();      // Turn on the backlight
+  lcd.setCursor(0, 0);  // Set cursor to the first row
+  lcd.print("Initializing...");
+  lcd.clear();
+
+  // Initialize HX711
+  scale.tare(); // Reset to zero
+  scale.set_scale(CALIBRATION_FACTOR);
+}
+
+void loop() {
+  distance = ultrasonicSensor();
+  float weight = loadSensor();  // Get weight reading
+  rtcReset();  
+  LCD(distance, weight);  // Update the LCD with current data
+  if (distance > 10) {
+    digitalWrite(WATER_PUMP, HIGH);
+  } else if (weight > 5) {
+    motor.write(180);
+  } else {
+    motor.write(0);
+  }
+  delay(500);
+}
+
+// Set the initial time (example function)
+void set_time() {
+  rtc.Begin();  // Start the RTC
+
+  // Set the RTC to compile time if it is not already running
+  RtcDateTime compiled = RtcDateTime(__DATE__, __TIME__);
+
+
+  if (!rtc.IsDateTimeValid() || rtc.GetIsWriteProtected()) {
+    Serial.println("RTC time is invalid or write protected! Setting new time...");
+    rtc.SetDateTime(compiled);  // Set RTC to compiled time
+  }
+  rtc.SetIsWriteProtected(false);  // Allow writing to RTC
+  Serial.print(compiled);
+}
+
+// Allow user to set a time interval
+void rtcReset() {
+  static int lastSwitchState = LOW;
+  int switchState = digitalRead(LEVER_SWITCH_PIN);
+
+
+  if (switchState == HIGH && lastSwitchState == LOW) {  // Detect button press
+    chosenTime += 1;  // Increase time interval (example: in hours)
+    Serial.print("Chosen Time Interval: ");
+    Serial.print(chosenTime);
+    Serial.println(" hours.");
+  }
+  lastSwitchState = switchState;  // Store previous state
+}
+// Ultrasonic sensor to measure distance
+int ultrasonicSensor() {
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  duration = pulseIn(ECHO_PIN, HIGH);
+  distance = duration * 0.017;
+
+  Serial.print("Distance: ");
+  Serial.println(distance);
+  if (distance > 980) {
+    Serial.println("No Read");
+  }
+  else if (distance >= distanceThreshold) {
+    Serial.println("Exceed!");
+  }
+  return distance;
+}
+
+// Read weight sensor (HX711)
+float loadSensor() {
+  if (scale.is_ready()) {
+    float reading = scale.get_units(10); // Display weight
+    Serial.print("HX711 Reading: ");
+    Serial.println(reading);
+    return reading;
+  } else {
+    Serial.println("HX711 Not Found.");
+    return 0;
+  }
+}
+
+// Function to update LCD with sensor data
+void LCD(float distance, float weight) {
+  lcd.clear();
+  lcd.setCursor(0, 0);  // Position on first row
+  lcd.print("Dist: ");
+  if (distance < 980) {
+  lcd.print(distance);
+} else {
+  lcd.print("N.R.");
+}
+  lcd.print("cm");
+  lcd.setCursor(0, 1);  // Position on second row
+  lcd.print("Weight: ");
+  lcd.print(weight);
+}
