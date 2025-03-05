@@ -6,9 +6,11 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
 #define CALIBRATION_FACTOR 420 // Callibration
+
 // Pin assignments
 const int LOADCELL_DOUT_PIN = A1; // HX711 Data output pin
 const int LOADCELL_SCK_PIN = A2; // HX711 Clock pin
+
 // Lcd is not required for pin initialization because automatic A4, A5
 const int WATER_PUMP = 3; // Temporary LED
 const int LEVER_SWITCH_PIN = 4; // Lever switch pin
@@ -18,12 +20,14 @@ const int SERVO_PIN = 9; // Servo motor control pin
 const int SCLK_PIN = 10; // RTC Serial Clock
 const int CE_PIN = 11; // RTC Chip Enable (Enable the communication)
 const int IO_PIN = 12; // RTC Input/Output pin
+
 // Object declarations
 HX711 scale; // Sets "scale" as keyword for load sensor
 ThreeWire myWire(IO_PIN, SCLK_PIN, CE_PIN); //Rtc wiring converion
 RtcDS1302<ThreeWire> rtc(myWire); // Rtc wiring
 Servo motor; // Sets "motor" as keyword for servo motor
 LiquidCrystal_I2C lcd(0x27, 16, 2); // LCD 16x2 with I2C address 0x27
+
 // Global variables
 long distance; // Ultrasonic distance
 long duration; // Ultrasonic duration
@@ -31,6 +35,7 @@ int scheduledHour = 12;
 int scheduledMinute = 0;
 int weightThreshold = 100; // Weight threshold
 int distanceThreshold = 100; // Distance threshold
+
 void setup() {
 Serial.begin(9600);
 // Initialize RTC
