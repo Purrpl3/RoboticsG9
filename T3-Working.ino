@@ -1,0 +1,217 @@
+#include <HX711.h>
+#include <RtcDS1302.h>
+#include <ThreeWire.h>
+#include <Arduino.h>
+#include <Servo.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+
+#define CALIBRATION_FACTOR 420 // Callibration
+
+// Pin assignments
+const int LOADCELL_DOUT_PIN = A1;// HX711 Data output pin
+const int LOADCELL_SCK_PIN = A2; // HX711 Clock pin
+// Lcd is not required for pin initialization because automatic A4, A5
+
+
+const int WATER_PUMP = 3;        // Buzzer
+const int LEVER_SWITCH_PIN = 4;  // Lever switch pin
+const int ECHO_PIN = 4;          // Ultrasonic sensor echo pin
+const int TRIG_PIN = 5;          // Ultrasonic sensor trigger pin
+const int SERVO_PIN = 9;         // Servo motor control pin
+const int SCLK_PIN = 10;         // RTC Serial Clock         
+const int CE_PIN = 11;           // RTC Chip Enable (Enable the communication)
+const int IO_PIN = 12;           // RTC Input/Output pin
+
+
+// Object declarations
+HX711 scale; // Sets "scale" as keyword for load sensor
+ThreeWire myWire(IO_PIN, SCLK_PIN, CE_PIN); //Rtc wiring converion
+RtcDS1302<ThreeWire> rtc(myWire); // Rtc wiring
+Servo motor; // Sets "motor" as keyword for servo motor
+LiquidCrystal_I2C lcd(0x27, 16, 2); // LCD 16x2 with I2C address 0x27
+
+
+// Global variables
+long distance; // Ultrasonic distance
+long duration; // Ultrasonic duration         
+int scheduledHour = 12;
+int scheduledMinute = 0;
+float weightThreshold = 100; // Weight threshold
+float distanceThreshold = 100; // Distance threshold
+
+
+void setup() {
+  Serial.begin(9600);
+  // Initialize RTC
+  set_time();
+
+  // Pin configurations
+  pinMode(WATER_PUMP, OUTPUT); // Water Pump pin
+  pinMode(TRIG_PIN, OUTPUT); // Ultrasonic Trigger pin
+  pinMode(ECHO_PIN, INPUT); // Ultrasonic Echo pin
+ 
+  scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN); // Start scale
+  motor.attach(SERVO_PIN); // Attach servo pin
+
+  // Initialize LCD
+  lcd.init(); // Initialize the LCD
+  lcd.backlight(); // Turn on the backlight
+  lcd.setCursor(0, 0); // Set cursor to the first row
+  lcd.print("Initializing..."); // Notifies the user the status
+  lcd.clear(); // Gets ready for printing data
+
+  // Initialize HX711
+  scale.tare(); // Reset to zero
+  scale.set_scale(CALIBRATION_FACTOR); // Callibrate scale
+}
+
+float ultrasonicSensor() {
+  digitalWrite(TRIG_PIN, LOW); // Ultrasonic triggering
+  delayMicroseconds(2); // 10 Microsecond delay
+  digitalWrite(TRIG_PIN, HIGH); // Ultrasonic triggering
+  delayMicroseconds(10); // 10 Microsecond delay
+  digitalWrite(TRIG_PIN, LOW); // Ultrasonic triggering
+
+  duration = pulseIn(ECHO_PIN, HIGH);
+  distance = duration * 0.017;
+  
+  Serial.print("Distance: "); // Prints distance
+  Serial.println(distance); // Prints distance
+  if (distance > 980) { // Checks if error
+    Serial.println("No Read"); // Shows error
+  }
+  else if (distance >= distanceThreshold) {
+    Serial.println("Exceed!"); // Checks if food is exceeding
+  }
+  return distance; // Return the distance
+}
+
+
+// Read weight sensor (HX711)
+float loadSensor() {
+  if (scale.is_ready()) {
+    float reading = scale.get_units(10); // Display weight
+    Serial.print("HX711 Reading: ");
+    Serial.println(reading); // Prints weight
+    return reading; // Return the weight
+  } else {
+    Serial.println("HX711 Not Found."); // Print no load sensor found
+    return 0; // Return no load sensor found
+  }
+}
+
+void loop() {
+  RtcDateTime now = rtc.GetDateTime();
+  Serial.print(now.Year()); // Prints the year
+  Serial.print("/"); // Separator
+  Serial.print(now.Month()); // Prints the month
+  Serial.print("/"); // Separator
+  Serial.print(now.Day()); // Prints the day
+  Serial.print(", "); // Separator
+  Serial.print(now.Hour()); // Prints the hour
+  Serial.print(":"); // Separator
+  Serial.print(now.Minute()); // Prints the minute
+  Serial.print(":"); // Separator
+  Serial.print(now.Second()); // Prints the second
+  
+  float weight = loadSensor();  // Get weight reading
+  float distance = ultrasonicSensor();
+  if (distance > distanceThreashold) {
+    Serial.print("Food almost empty");
+  }
+  if (now.Hour() == scheduledHour && now.Minute() <= scheduledMinute + 10) {
+    if (weight > weightThreshold) { // Check if heavy enough
+      motor.write(180); // Open food channel    
+      digitalWrite(WATER_PUMP, HIGH); // Open water channel
+    } else { // Otherwise
+      motor.write(0); // Close food channel
+      digitalWrite(WATER_PUMP, LOW); // Close water channel   
+    }
+  }
+  LCD1(weight); // Cycle through the values
+  delay(500); // Delay 1 second
+  LCD2(distance); // Cycle through the values
+}
+
+void set_time() {
+  RtcDateTime now = rtc.GetDateTime();
+  //RtcDateTime newTime = RtcDateTime(2025, 03, 05, 19, 00, 13); //Manual set, comment after use
+  //rtc.SetDateTime(newTime); // Manual time set
+  rtc.Begin();  // Start the RTC
+  Serial.print(now.Year()); // Prints the year
+  Serial.print("/"); // Separator
+  Serial.print(now.Month()); // Prints the month
+  Serial.print("/"); // Separator
+  Serial.print(now.Day()); // Prints the day
+  Serial.print(", "); // Separator
+  Serial.print(now.Hour()); // Prints the hour
+  Serial.print(":"); // Separator
+  Serial.print(now.Minute()); // Prints the minute
+  Serial.print(":"); // Separator
+  Serial.print(now.Second()); // Prints the second
+  
+}
+
+// Allow user to set a time interval
+void rtcReset() { // Allow for reseting time (Optional)
+  Serial.print("Chosen Time Interval: "); // Prints the chosen time
+
+
+}
+// Ultrasonic sensor to measure distance
+
+// Function to update LCD with sensor data
+  void LCD1(float weight) {
+  lcd.clear(); // Clear LCD
+  lcd.setCursor(0, 0); // Position on first row
+  lcd.print("Weight: "); // Prints weight
+  lcd.print(weight); // Prints weight
+  lcd.print("g");  // Prints grammes
+
+  RtcDateTime now = rtc.GetDateTime();
+  lcd.setCursor(0, 1); // Position on second row
+  lcd.print(now.Year());
+  lcd.print("/"); // Separator
+  if (now.Month() <= 32) {
+    lcd.print(now.Month()); // Print month
+  } else {
+    lcd.print("Er"); // Error detection
+  }
+  lcd.print("/"); // Separator
+  if (now.Day() <= 31) {
+    lcd.print(now.Day()); // Print Day
+  } else {
+    lcd.print("Err");
+  }
+}
+  void LCD2(float distance) {
+  lcd.clear(); // Clear LCD  
+  lcd.setCursor(0, 0);  // Position on second row
+  lcd.print("Distan: "); // Prints distance
+  if (distance < 980) {
+  lcd.print(distance); // Prints distance
+  lcd.print("cm"); // Prints centimetres
+} else {
+  lcd.print("N.R."); // Print No Read
+}
+  RtcDateTime now = rtc.GetDateTime();
+  lcd.setCursor(0, 1); // Position on first row
+  if (now.Hour() <= 24) { // Error detection
+    lcd.print(now.Hour()); // Prints hour
+  } else {
+    lcd.print("Er"); // Error detection
+  }
+    lcd.print(":"); // Spacer
+  if (now.Minute() <= 60) { // Error detection
+    lcd.print(now.Minute()); // Prints minute
+  } else {
+    lcd.print("Er"); // Error detection
+  }
+  lcd.print(":"); // Spacer
+  if (now.Second() <= 60) {
+    lcd.print(now.Second()); // Prints seconds
+  } else {
+    lcd.print("Er");
+  }
+}
